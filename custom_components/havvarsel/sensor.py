@@ -4,19 +4,15 @@ from datetime import datetime
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
 
-from .const import (
-    DOMAIN,
-    CONF_LATITUDE,
-    CONF_LONGITUDE,
-    UPDATE_INTERVAL,
-)
+from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
 def build_api_url(latitude: str, longitude: str) -> str:
     """
-    Build the Havvarsel temperatureprojection URL. 
-    NOTE: The endpoint expects /temperatureprojection/{LONGITUDE}/{LATITUDE}.
+    Havvarsel temperatureprojection endpoint format:
+      /temperatureprojection/{LON}/{LAT}
+    We'll invert user inputs here.
     """
     return (
         "https://api.havvarsel.no/apis/duapi/havvarsel/v2/temperatureprojection/"
@@ -50,6 +46,7 @@ class HavvarselSeaTemperatureSensor(Entity):
     @property
     def unique_id(self):
         """Return a unique ID based on lat/lon."""
+        # E.g. havvarsel_sea_temp_60.39_5.32
         return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}"
 
     @property
@@ -59,7 +56,7 @@ class HavvarselSeaTemperatureSensor(Entity):
 
     @property
     def extra_state_attributes(self):
-        """Return extra attributes."""
+        """Return additional attributes."""
         return self._attributes
 
     @Throttle(UPDATE_INTERVAL)
@@ -67,54 +64,62 @@ class HavvarselSeaTemperatureSensor(Entity):
         """Fetch JSON data from Havvarsel temperatureprojection endpoint."""
         url = build_api_url(self._latitude, self._longitude)
         headers = {"Accept": "application/json"}
+
+        _LOGGER.debug("Requesting Havvarsel data from: %s", url)
+
         try:
             resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code != 200:
-                _LOGGER.error(
-                    "Havvarsel returned status %s: %s",
-                    resp.status_code,
-                    resp.text
-                )
+                _LOGGER.error("Havvarsel error %s: %s", resp.status_code, resp.text)
                 return
 
             data = resp.json()
-            # The JSON should have a structure like:
-            # {
-            #   "projection": {
-            #     "variables": {
-            #       "variableName": "temperature",
-            #       "data": [
-            #         {
-            #           "value": 8.17,
-            #           "raw_time": 1.7400888E12
-            #         },
-            #         ...
-            #       ]
-            #       ...
-            #     },
-            #     ...
-            #   }
-            # }
-            projection = data.get("projection", {})
-            variables = projection.get("variables", {})
-            data_list = variables.get("data", [])
+            _LOGGER.debug("Havvarsel response: %s", data)
 
-            if not data_list:
-                _LOGGER.warning("No 'data' array found in Havvarsel response.")
+            # The JSON structure is:
+            # {
+            #   "variables": [
+            #     {
+            #       "variableName": "temperature",
+            #       "dimensions": [...],
+            #       "data": [
+            #         { "value": 8.17, "rawTime": 1.7400888E12 },
+            #         ...
+            #       ],
+            #       "metadata": [...]
+            #     }
+            #   ],
+            #   "queryPoint": { ... },
+            #   "closestGridPoint": { ... },
+            #   "closestGridPointWithData": { ... }
+            # }
+
+            variables = data.get("variables", [])
+            if not variables:
+                _LOGGER.warning("No 'variables' array in Havvarsel response.")
                 return
 
-            # For example, let's take the first data point
+            # Grab the first variable object:
+            temperature_var = variables[0]
+
+            # Get the data array of temperature/time values
+            data_list = temperature_var.get("data", [])
+            if not data_list:
+                _LOGGER.warning("No 'data' array in Havvarsel 'variables[0]'.")
+                return
+
+            # Let's just take the first data point as "current" temperature
             first_point = data_list[0]
             temperature = first_point.get("value")
-            raw_time = first_point.get("raw_time")
+            raw_time = first_point.get("rawTime")  # note: "rawTime" instead of "raw_time"
 
             if temperature is not None:
                 self._state = round(float(temperature), 2)
             else:
                 self._state = None
 
+            # Convert raw_time (epoch ms) to a datetime
             if raw_time is not None:
-                # raw_time is presumably epoch milliseconds
                 try:
                     dt = datetime.utcfromtimestamp(float(raw_time) / 1000.0)
                     self._attributes["forecast_time"] = dt.isoformat()
@@ -123,5 +128,9 @@ class HavvarselSeaTemperatureSensor(Entity):
             else:
                 self._attributes["forecast_time"] = None
 
+            # Optionally store other info (metadata, etc.)
+            self._attributes["latitude"] = self._latitude
+            self._attributes["longitude"] = self._longitude
+
         except requests.exceptions.RequestException as err:
-            _LOGGER.error("Error fetching Havvarsel data: %s", err)
+            _LOGGER.error("Exception while fetching Havvarsel data: %s", err)
