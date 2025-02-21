@@ -1,14 +1,14 @@
 {
-  "name": "Havvarsel Sea Temperature",
-  "country": "NO",
-  "domain": "havvarsel",
-  "homeassistant": "2023.1.0",
-  "documentation": "https://github.com/oyvhov/havvarsel_seatemp",
-  "issue_tracker": "https://github.com/oyvhov/havvarsel_seatemp/issues",
-  "source": "https://github.com/oyvhov/havvarsel_seatemp",
-  "version": "1.0.0",
-  "requirements": [],
-  "codeowners": ["@oyvhov"],
-  "iot_class": "cloud_polling",
-  "category": "integration"
+"name": "Havvarsel Sea Temperature",
+"country": "NO",
+"domain": "havvarsel",
+"homeassistant": "2023.1.0",
+"documentation": "https://github.com/oyvhov/havvarsel_seatemp",
+"issue_tracker": "https://github.com/oyvhov/havvarsel_seatemp/issues",
+"source": "https://github.com/oyvhov/havvarsel_seatemp",
+"version": "1.0.0",
+"requirements": [],
+"codeowners": ["@oyvhov"],
+"iot_class": "cloud_polling",
+"category": "integration"
 }
