@@ -1,8 +1,9 @@
 {
   "domain": "havvarsel",
   "name": "Havvarsel",
+  "documentation": "https://github.com/your-username/havvarsel",
   "version": "0.0.1",
-  "documentation": "https://github.com/<your-username>/havvarsel",
+  "config_flow": true,                 
   "requirements": [],
   "codeowners": [],
   "iot_class": "cloud_polling"
