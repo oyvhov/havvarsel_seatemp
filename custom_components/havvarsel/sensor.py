@@ -5,7 +5,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
 from homeassistant.util.dt import now as ha_now
 
-from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE, UPDATE_INTERVAL
+from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,28 +24,26 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     """Set up the Havvarsel sensor via config entry."""
     lat = config_entry.data.get(CONF_LATITUDE)
     lon = config_entry.data.get(CONF_LONGITUDE)
+    name = config_entry.data.get(CONF_NAME, "Sea Temperature Sensor")  # Use custom name
 
-    sensor = HavvarselSeaTemperatureSensor(lat, lon)
+    sensor = HavvarselSeaTemperatureSensor(name, lat, lon)
     async_add_entities([sensor], update_before_add=True)
 
 class HavvarselSeaTemperatureSensor(Entity):
     """
-    A sensor that:
-    - Fetches Havvarsel temperature data (JSON).
-    - Builds a list of hourly blocks in the attribute 'raw_today'.
-    - Sets the sensor's state to the block matching 'current hour'.
+    A sensor that fetches Havvarsel temperature data and updates its state.
     """
 
-    def __init__(self, latitude, longitude):
+    def __init__(self, name, latitude, longitude):
+        self._name = name
         self._latitude = latitude
         self._longitude = longitude
         self._state = None
         self._attributes = {}
-        self._name = "Sea Temperature"
 
     @property
     def name(self):
-        """Return the name of the sensor."""
+        """Return the user-defined name of the sensor."""
         return self._name
 
     @property
@@ -60,21 +58,13 @@ class HavvarselSeaTemperatureSensor(Entity):
 
     @property
     def extra_state_attributes(self):
-        """
-        Return additional attributes, including a list of
-        all forecast blocks under 'raw_today'.
-        """
+        """Return additional attributes."""
         return self._attributes
 
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement as Celsius."""
         return "°C"
-    @property
-    def icon(self):
-        """Return the icon for the sensor."""
-        return "mdi:coolant-temperature"
-
 
     @property
     def device_class(self):
@@ -83,8 +73,13 @@ class HavvarselSeaTemperatureSensor(Entity):
 
     @property
     def state_class(self):
-        """Return the state class as measurement (for sensors reporting measured values)."""
+        """Return the state class as measurement."""
         return "measurement"
+
+    @property
+    def icon(self):
+        """Return an appropriate icon for sea temperature."""
+        return "mdi:coolant-temperature"
 
     @Throttle(UPDATE_INTERVAL)
     def update(self):
@@ -98,8 +93,6 @@ class HavvarselSeaTemperatureSensor(Entity):
             resp = requests.get(url, headers=headers, timeout=10)
             resp.raise_for_status()
             data = resp.json()
-
-            _LOGGER.debug("Havvarsel parsed JSON: %s", data)
 
             variables = data.get("variables", [])
             if not variables:
@@ -128,23 +121,15 @@ class HavvarselSeaTemperatureSensor(Entity):
 
             self._attributes["raw_today"] = raw_today_list
 
-            now_ha = ha_now()  # typically local time in modern HA
-            _LOGGER.debug("Home Assistant current time: %s", now_ha)
-
             now_utc = datetime.utcnow()
             current_temp = None
 
             for block in raw_today_list:
                 start_dt = datetime.fromisoformat(block["start"])
                 end_dt = datetime.fromisoformat(block["end"])
-                _LOGGER.debug(
-                    "Comparing block: start=%s, end=%s, value=%s",
-                    start_dt, end_dt, block["value"]
-                )
 
                 if start_dt <= now_utc < end_dt:
                     current_temp = block["value"]
-                    _LOGGER.debug("Found matching block => %s", current_temp)
                     break
 
             self._state = current_temp if current_temp is not None else None
