@@ -1,7 +1,7 @@
 {
   "domain": "havvarsel",
   "name": "Havvarsel",
-  "documentation": "https://github.com/your-username/havvarsel",
+  "documentation": "https://github.com/oyvhov/havvarsel_seatemp",
   "version": "0.0.1",
   "config_flow": true,                 
   "requirements": [],
