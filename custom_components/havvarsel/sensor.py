@@ -1,32 +1,34 @@
 import logging
-from datetime import datetime, timedelta
-
 import requests
+from datetime import datetime
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
 
-from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE, UPDATE_INTERVAL
+from .const import (
+    DOMAIN,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    UPDATE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=UPDATE_INTERVAL)
-
 def build_api_url(latitude: str, longitude: str) -> str:
     """
-    Construct the Havvarsel API URL.
-    Adjust this based on the actual API endpoints/parameters you need.
+    Build the Havvarsel temperatureprojection URL. 
+    NOTE: The endpoint expects /temperatureprojection/{LONGITUDE}/{LATITUDE}.
     """
     return (
-        f"https://api.havvarsel.no/apis/duapi/havvarsel/v2/weather"
-        f"?lat={latitude}&lon={longitude}"
+        "https://api.havvarsel.no/apis/duapi/havvarsel/v2/temperatureprojection/"
+        f"{longitude}/{latitude}"
     )
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the Havvarsel sensor entity."""
-    latitude = config_entry.data.get(CONF_LATITUDE)
-    longitude = config_entry.data.get(CONF_LONGITUDE)
+    """Set up the Havvarsel sensor."""
+    lat = config_entry.data.get(CONF_LATITUDE)
+    lon = config_entry.data.get(CONF_LONGITUDE)
 
-    sensor = HavvarselSeaTemperatureSensor(latitude, longitude)
+    sensor = HavvarselSeaTemperatureSensor(lat, lon)
     async_add_entities([sensor], update_before_add=True)
 
 
@@ -34,7 +36,6 @@ class HavvarselSeaTemperatureSensor(Entity):
     """Representation of a Havvarsel sea temperature sensor."""
 
     def __init__(self, latitude, longitude):
-        """Initialize the sensor."""
         self._latitude = latitude
         self._longitude = longitude
         self._state = None
@@ -48,7 +49,7 @@ class HavvarselSeaTemperatureSensor(Entity):
 
     @property
     def unique_id(self):
-        """Return a unique_id for this entity (optional but recommended)."""
+        """Return a unique ID based on lat/lon."""
         return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}"
 
     @property
@@ -58,35 +59,69 @@ class HavvarselSeaTemperatureSensor(Entity):
 
     @property
     def extra_state_attributes(self):
-        """Return additional attributes, if any."""
+        """Return extra attributes."""
         return self._attributes
 
-    @Throttle(MIN_TIME_BETWEEN_UPDATES)
+    @Throttle(UPDATE_INTERVAL)
     def update(self):
-        """
-        Fetch the latest data from the Havvarsel API.
-        This is a synchronous method. 
-        For advanced usage, consider the DataUpdateCoordinator pattern or asynchronous methods.
-        """
+        """Fetch JSON data from Havvarsel temperatureprojection endpoint."""
         url = build_api_url(self._latitude, self._longitude)
+        headers = {"Accept": "application/json"}
         try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                _LOGGER.error(
+                    "Havvarsel returned status %s: %s",
+                    resp.status_code,
+                    resp.text
+                )
+                return
 
-                # TODO: Adjust this parsing based on the actual Havvarsel API JSON structure.
-                # This is just an example to show how you might extract sea temperature.
-                # Example placeholders:
-                # "seaTemperature": 5.2
+            data = resp.json()
+            # The JSON should have a structure like:
+            # {
+            #   "projection": {
+            #     "variables": {
+            #       "variableName": "temperature",
+            #       "data": [
+            #         {
+            #           "value": 8.17,
+            #           "raw_time": 1.7400888E12
+            #         },
+            #         ...
+            #       ]
+            #       ...
+            #     },
+            #     ...
+            #   }
+            # }
+            projection = data.get("projection", {})
+            variables = projection.get("variables", {})
+            data_list = variables.get("data", [])
 
-                sea_temp = None
-                if "seaTemperature" in data:
-                    sea_temp = data["seaTemperature"]
+            if not data_list:
+                _LOGGER.warning("No 'data' array found in Havvarsel response.")
+                return
 
-                self._state = sea_temp
-                self._attributes["last_update"] = datetime.now().isoformat()
+            # For example, let's take the first data point
+            first_point = data_list[0]
+            temperature = first_point.get("value")
+            raw_time = first_point.get("raw_time")
+
+            if temperature is not None:
+                self._state = round(float(temperature), 2)
             else:
-                _LOGGER.error("Error response from Havvarsel API: %s", response.text)
+                self._state = None
+
+            if raw_time is not None:
+                # raw_time is presumably epoch milliseconds
+                try:
+                    dt = datetime.utcfromtimestamp(float(raw_time) / 1000.0)
+                    self._attributes["forecast_time"] = dt.isoformat()
+                except ValueError:
+                    self._attributes["forecast_time"] = str(raw_time)
+            else:
+                self._attributes["forecast_time"] = None
 
         except requests.exceptions.RequestException as err:
-            _LOGGER.error("Request error: %s", err)
+            _LOGGER.error("Error fetching Havvarsel data: %s", err)
