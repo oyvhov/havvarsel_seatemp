@@ -9,6 +9,6 @@
 "version": "1.0.0",
 "requirements": [],
 "codeowners": ["@oyvhov"],
-"iot_class": "cloud_polling",
-"category": "integration"
+"iot_class": "cloud_polling"
+
 }
