@@ -9,8 +9,6 @@ from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_NAME = "sensor_name"  # Add support for custom sensor names
-
 
 class HavvarselConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Havvarsel Sea Temperature."""
@@ -29,12 +27,11 @@ class HavvarselConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_coordinates"
             else:
                 return self.async_create_entry(
-                    title=user_input[CONF_NAME],  # Use the user-defined name
+                    title=f"Havvarsel Sea Temp ({user_input[CONF_LATITUDE]}, {user_input[CONF_LONGITUDE]})",
                     data=user_input
                 )
 
         data_schema = vol.Schema({
-            vol.Required(CONF_NAME): cv.string,  # Custom sensor name field
             vol.Required(CONF_LATITUDE): cv.string,
             vol.Required(CONF_LONGITUDE): cv.string,
         })
@@ -52,7 +49,7 @@ class HavvarselConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HavvarselOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle editing latitude/longitude and name after setup."""
+    """Handle editing latitude/longitude after initial setup."""
 
     def __init__(self, config_entry):
         self.config_entry = config_entry
@@ -63,10 +60,6 @@ class HavvarselOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         data_schema = vol.Schema({
-            vol.Required(
-                CONF_NAME,
-                default=self.config_entry.data.get(CONF_NAME, "Sea Temperature Sensor")
-            ): cv.string,
             vol.Required(
                 CONF_LATITUDE,
                 default=self.config_entry.data.get(CONF_LATITUDE)
