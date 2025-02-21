@@ -18,16 +18,14 @@ class HavvarselConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
         errors = {}
-
         if user_input is not None:
-            # Basic validation for lat/lon
+            # Validate that lat/long can be converted to float
             try:
                 float(user_input[CONF_LATITUDE])
                 float(user_input[CONF_LONGITUDE])
             except ValueError:
                 errors["base"] = "invalid_coordinates"
             else:
-                # If valid, create the config entry
                 return self.async_create_entry(
                     title=f"Havvarsel Sea Temp ({user_input[CONF_LATITUDE]}, {user_input[CONF_LONGITUDE]})",
                     data=user_input
@@ -51,12 +49,13 @@ class HavvarselConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HavvarselOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options (edit lat/lon after initial setup)."""
+    """Handle editing latitude/longitude after initial setup."""
 
     def __init__(self, config_entry):
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
+        """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
