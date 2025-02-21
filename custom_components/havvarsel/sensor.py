@@ -51,7 +51,7 @@ class HavvarselSeaTemperatureSensor(Entity):
     @property
     def unique_id(self):
         """Return a unique ID based on lat/lon."""
-        return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}"
+        return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}_{self.entry_id}"
 
     @property
     def state(self):
