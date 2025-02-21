@@ -1,8 +1,9 @@
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
+from homeassistant.util.dt import now as ha_now  # or import as_local, etc.
 
 from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE, UPDATE_INTERVAL
 
@@ -12,7 +13,7 @@ def build_api_url(latitude: str, longitude: str) -> str:
     """
     Havvarsel temperatureprojection endpoint format:
       /temperatureprojection/{LON}/{LAT}
-    We'll invert user inputs here.
+    We'll invert lat/lon here.
     """
     return (
         "https://api.havvarsel.no/apis/duapi/havvarsel/v2/temperatureprojection/"
@@ -20,7 +21,6 @@ def build_api_url(latitude: str, longitude: str) -> str:
     )
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the Havvarsel sensor."""
     lat = config_entry.data.get(CONF_LATITUDE)
     lon = config_entry.data.get(CONF_LONGITUDE)
 
@@ -29,7 +29,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 
 class HavvarselSeaTemperatureSensor(Entity):
-    """Representation of a Havvarsel sea temperature sensor."""
+    """Representation of a Havvarsel sea temperature sensor, with a full forecast attribute."""
 
     def __init__(self, latitude, longitude):
         self._latitude = latitude
@@ -40,33 +40,27 @@ class HavvarselSeaTemperatureSensor(Entity):
 
     @property
     def name(self):
-        """Return the name of the sensor."""
         return self._name
 
     @property
     def unique_id(self):
-        """Return a unique ID based on lat/lon."""
-        # E.g. havvarsel_sea_temp_60.39_5.32
         return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}"
 
     @property
     def state(self):
-        """Return the current temperature."""
+        """The temperature for the **current hour**."""
         return self._state
 
     @property
     def extra_state_attributes(self):
-        """Return additional attributes."""
+        """All forecast data (raw_today) plus any other info."""
         return self._attributes
 
     @Throttle(UPDATE_INTERVAL)
     def update(self):
-        """Fetch JSON data from Havvarsel temperatureprojection endpoint."""
+        """Fetch JSON data, build a list of 1-hour blocks, and set state to the 'current hour' temp."""
         url = build_api_url(self._latitude, self._longitude)
         headers = {"Accept": "application/json"}
-
-        _LOGGER.debug("Requesting Havvarsel data from: %s", url)
-
         try:
             resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code != 200:
@@ -74,63 +68,37 @@ class HavvarselSeaTemperatureSensor(Entity):
                 return
 
             data = resp.json()
-            _LOGGER.debug("Havvarsel response: %s", data)
-
-            # The JSON structure is:
-            # {
-            #   "variables": [
-            #     {
-            #       "variableName": "temperature",
-            #       "dimensions": [...],
-            #       "data": [
-            #         { "value": 8.17, "rawTime": 1.7400888E12 },
-            #         ...
-            #       ],
-            #       "metadata": [...]
-            #     }
-            #   ],
-            #   "queryPoint": { ... },
-            #   "closestGridPoint": { ... },
-            #   "closestGridPointWithData": { ... }
-            # }
-
             variables = data.get("variables", [])
             if not variables:
-                _LOGGER.warning("No 'variables' array in Havvarsel response.")
+                _LOGGER.warning("No 'variables' array in response.")
                 return
 
-            # Grab the first variable object:
+            # The temperature data is typically in the first object
             temperature_var = variables[0]
-
-            # Get the data array of temperature/time values
             data_list = temperature_var.get("data", [])
             if not data_list:
-                _LOGGER.warning("No 'data' array in Havvarsel 'variables[0]'.")
+                _LOGGER.warning("No 'data' array in temperature_var.")
                 return
 
-            # Let's just take the first data point as "current" temperature
-            first_point = data_list[0]
-            temperature = first_point.get("value")
-            raw_time = first_point.get("rawTime")  # note: "rawTime" instead of "raw_time"
+            raw_today_list = []
+            for point in data_list:
+                value = point.get("value")
+                raw_time = point.get("rawTime")  # epoch ms
+                if value is not None and raw_time is not None:
+                    # Convert epoch ms to a Python datetime (UTC)
+                    dt_start = datetime.utcfromtimestamp(raw_time / 1000.0)
+                    dt_end = dt_start + timedelta(hours=1)  # each forecast block is 1 hour
 
-            if temperature is not None:
-                self._state = round(float(temperature), 2)
-            else:
-                self._state = None
+                    raw_today_list.append({
+                        "start": dt_start.isoformat(),
+                        "end": dt_end.isoformat(),
+                        "value": round(value, 2),
+                    })
 
-            # Convert raw_time (epoch ms) to a datetime
-            if raw_time is not None:
-                try:
-                    dt = datetime.utcfromtimestamp(float(raw_time) / 1000.0)
-                    self._attributes["forecast_time"] = dt.isoformat()
-                except ValueError:
-                    self._attributes["forecast_time"] = str(raw_time)
-            else:
-                self._attributes["forecast_time"] = None
+            # Store the entire forecast in an attribute
+            self._attributes["raw_today"] = raw_today_list
 
-            # Optionally store other info (metadata, etc.)
-            self._attributes["latitude"] = self._latitude
-            self._attributes["longitude"] = self._longitude
-
-        except requests.exceptions.RequestException as err:
-            _LOGGER.error("Exception while fetching Havvarsel data: %s", err)
+            # Find the block that includes "now"
+            # Use Home Assistant's 'now()' (UTC or local—depends on your preference).
+            now_ha = ha_now()  # Typically returns local time with timezone in modern HA
+  
