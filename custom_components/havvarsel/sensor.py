@@ -70,6 +70,11 @@ class HavvarselSeaTemperatureSensor(Entity):
     def unit_of_measurement(self):
         """Return the unit of measurement as Celsius."""
         return "°C"
+    @property
+    def icon(self):
+        """Return the icon for the sensor."""
+        return "mdi:coolant-temperature"
+
 
     @property
     def device_class(self):
