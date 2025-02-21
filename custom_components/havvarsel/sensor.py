@@ -3,7 +3,7 @@ import requests
 from datetime import datetime, timedelta
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
-from homeassistant.util.dt import now as ha_now  # homeassistant.util.dt.now()
+from homeassistant.util.dt import now as ha_now
 
 from .const import DOMAIN, CONF_LATITUDE, CONF_LONGITUDE, UPDATE_INTERVAL
 
@@ -11,8 +11,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def build_api_url(latitude: str, longitude: str) -> str:
     """
-    Havvarsel temperatureprojection endpoint format:
-      /temperatureprojection/{LON}/{LAT}
+    Havvarsel temperature projection endpoint format:
+    /temperatureprojection/{LON}/{LAT}
     We'll invert lat/lon here because the user inputs lat/long in the normal order.
     """
     return (
@@ -51,7 +51,7 @@ class HavvarselSeaTemperatureSensor(Entity):
     @property
     def unique_id(self):
         """Return a unique ID based on lat/lon."""
-        return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}_{self.entry_id}"
+        return f"havvarsel_sea_temp_{self._latitude}_{self._longitude}"
 
     @property
     def state(self):
@@ -66,6 +66,21 @@ class HavvarselSeaTemperatureSensor(Entity):
         """
         return self._attributes
 
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement as Celsius."""
+        return "°C"
+
+    @property
+    def device_class(self):
+        """Return the device class as temperature."""
+        return "temperature"
+
+    @property
+    def state_class(self):
+        """Return the state class as measurement (for sensors reporting measured values)."""
+        return "measurement"
+
     @Throttle(UPDATE_INTERVAL)
     def update(self):
         """Fetch JSON data, build the list of blocks, and find the current hour's temperature."""
@@ -76,44 +91,22 @@ class HavvarselSeaTemperatureSensor(Entity):
 
         try:
             resp = requests.get(url, headers=headers, timeout=10)
-            _LOGGER.debug("Havvarsel status code: %s", resp.status_code)
-            _LOGGER.debug("Havvarsel raw response: %s", resp.text)
-
-            if resp.status_code != 200:
-                _LOGGER.error("Havvarsel error %s: %s", resp.status_code, resp.text)
-                return
-
+            resp.raise_for_status()
             data = resp.json()
-            _LOGGER.debug("Havvarsel parsed JSON: %s", data)
 
-            # The JSON structure typically looks like:
-            # {
-            #   "variables": [
-            #     {
-            #       "variableName": "temperature",
-            #       "data": [
-            #         {"value": 8.17, "rawTime": 1.7400888E12},
-            #         ...
-            #       ],
-            #       ...
-            #     }
-            #   ],
-            #   ...
-            # }
+            _LOGGER.debug("Havvarsel parsed JSON: %s", data)
 
             variables = data.get("variables", [])
             if not variables:
                 _LOGGER.warning("No 'variables' array in response, cannot parse.")
                 return
 
-            # Usually temperature data is in the first element
             temperature_var = variables[0]
             data_list = temperature_var.get("data", [])
             if not data_list:
                 _LOGGER.warning("No 'data' array in first variable.")
                 return
 
-            # Build a list of forecast blocks
             raw_today_list = []
             for point in data_list:
                 value = point.get("value")
@@ -128,16 +121,14 @@ class HavvarselSeaTemperatureSensor(Entity):
                     }
                     raw_today_list.append(block)
 
-            # Store the entire forecast in an attribute
             self._attributes["raw_today"] = raw_today_list
 
-            # We'll attempt to find the block matching "current hour".
             now_ha = ha_now()  # typically local time in modern HA
             _LOGGER.debug("Home Assistant current time: %s", now_ha)
 
+            now_utc = datetime.utcnow()
             current_temp = None
 
-            # Check each block to see if 'now' is within [start, end)
             for block in raw_today_list:
                 start_dt = datetime.fromisoformat(block["start"])
                 end_dt = datetime.fromisoformat(block["end"])
@@ -146,22 +137,12 @@ class HavvarselSeaTemperatureSensor(Entity):
                     start_dt, end_dt, block["value"]
                 )
 
-                # If your forecast times are in UTC, but now_ha is local, they might never match.
-                # Option A: convert start_dt and end_dt to local time
-                # Option B: convert now_ha to UTC
-                # We'll do Option B here for clarity:
-                now_utc = datetime.utcnow()
                 if start_dt <= now_utc < end_dt:
                     current_temp = block["value"]
                     _LOGGER.debug("Found matching block => %s", current_temp)
                     break
 
-            if current_temp is not None:
-                self._state = current_temp
-            else:
-                # No matching block => show None
-                _LOGGER.debug("No block matched the current time.")
-                self._state = None
+            self._state = current_temp if current_temp is not None else None
 
         except requests.exceptions.RequestException as err:
             _LOGGER.error("Exception while fetching Havvarsel data: %s", err)
