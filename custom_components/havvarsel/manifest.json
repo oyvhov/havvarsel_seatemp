@@ -1,11 +1,10 @@
 {
   "domain": "havvarsel",
-  "name": "Havvarsel Sea Temperature",
-  "version": "1.0.0",
-  "documentation": "https://github.com/oyvhov/havvarsel_seatemp",
-  "issue_tracker": "https://github.com/oyvhov/havvarsel_seatemp/issues",
-  "dependencies": [],
-  "codeowners": ["@oyvhov"],
+  "name": "Havvarsel",
+  "documentation": "https://github.com/your-username/havvarsel",
+  "version": "0.0.1",
+  "config_flow": true,                 
   "requirements": [],
+  "codeowners": [],
   "iot_class": "cloud_polling"
 }
