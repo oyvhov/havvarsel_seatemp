@@ -42,6 +42,8 @@
 1. Go to **Home Assistant → Settings → Devices & Services**.
 2. Click **"Add Integration"** and search for **Havvarsel**.
 3. Enter:
+   ![image](https://github.com/user-attachments/assets/8d0768f0-1c24-4cb9-909b-b383059ae6c8)
+
 - **Sensor Name** (e.g., `"Bergen Sea Temp"`)
 - **Latitude** (e.g., `61.356045`)
 - **Longitude** (e.g., `5.18974`)
