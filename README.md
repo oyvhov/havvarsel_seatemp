@@ -29,7 +29,7 @@
 1. Open **HACS** in Home Assistant.
 2. Click **"Integrations" → "Custom Repositories"**.
 3. Add:  
-- **Repository URL**: `<your-repo-url>`  
+- **Repository URL**: `https://github.com/oyvhov/havvarsel_seatemp`  
 - **Category**: `Integration`  
 4. Search for **"Havvarsel"** in HACS and install.
 5. Restart Home Assistant.
@@ -49,12 +49,64 @@
 - **Latitude** (e.g., `61.356045`)
 - **Longitude** (e.g., `5.18974`)
 
-### **Example Entity**
-After setup, you will get a **sensor entity**:
+### **Use**
+Example of forecast with custom apex charts card (https://github.com/RomRider/apexcharts-card):
+
+
+![image](https://github.com/user-attachments/assets/f6a9410c-ef5f-4d78-b9f1-a8ca536f2313)
+
 
 ```yaml
-sensor:
-- platform: havvarsel
- name: "Sea Temperature"
- latitude: 61.356045
- longitude: 5.18974
+type: grid
+cards:
+  - type: heading
+    heading_style: title
+    grid_options:
+      columns: 6
+      rows: 1
+    heading: Sjøtemperatur Bergen
+    icon: mdi:coolant-temperature
+  - type: custom:apexcharts-card
+    graph_span: 120h
+    experimental:
+      color_threshold: false
+    apex_config:
+      chart:
+        height: 240px
+      grid:
+        show: false
+        borderColor: var(--blue)
+    header:
+      show: false
+    span:
+      start: day
+    yaxis:
+      - min: 0
+        max: "|3|"
+        decimals: 1
+        show: true
+    now:
+      show: true
+      label: "No"
+      color: "#ffb581"
+    all_series_config:
+      float_precision: 2
+    series:
+      - entity: sensor.sea_temperature_bergen
+        show:
+          extremas: true
+          in_header: false
+          name_in_header: true
+          in_chart: true
+        name: Rivedal
+        type: area
+        curve: smooth
+        extend_to: end
+        stroke_width: 3
+        opacity: 0.2
+        color: "#90bfff"
+        data_generator: |
+          return entity.attributes.raw_today.map((start, index) => {
+            return [new Date(start["start"]).getTime(), entity.attributes.raw_today[index]["value"]];
+          });
+
